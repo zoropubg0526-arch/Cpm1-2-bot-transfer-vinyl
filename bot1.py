@@ -11,6 +11,8 @@ from io import BytesIO
 from collections import defaultdict
 import sys
 import requests
+import threading          # <-- ADDED
+from http.server import HTTPServer, BaseHTTPRequestHandler  # <-- ADDED
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -1337,6 +1339,23 @@ def main():
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_error_handler(error_handler)
+
+    # ======================== ADDED FOR RENDER PORT ========================
+    # Start a simple HTTP server on the port Render expects
+    class HealthCheckHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+
+    def start_http_server():
+        port = int(os.environ.get('PORT', 10000))
+        server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+        server.serve_forever()
+
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
+    # ======================================================================
 
     print("🤖 ES3 Session Bot running with CPM1, CPM2, CPM1→CPM2, and CPM2→CPM2 support...")
     app.run_polling()
