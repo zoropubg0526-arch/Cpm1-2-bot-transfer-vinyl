@@ -11,8 +11,8 @@ from io import BytesIO
 from collections import defaultdict
 import sys
 import requests
-import threading          # <-- ADDED
-from http.server import HTTPServer, BaseHTTPRequestHandler  # <-- ADDED
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -212,7 +212,7 @@ def log_user_action(user_id, email, cpm_type, session_code=""):
         fancy_log(user_id, "SYSTEM", "Failed to log user action", str(e))
 
 #-----------------------------
-# COIN SYSTEM
+# COIN SYSTEM (modified for expiry)
 #-----------------------------
 
 def load_coins():
@@ -231,25 +231,45 @@ def get_user_coins(user_id):
     return data.get(str(user_id), {"coins": 0, "unlimited": False}).get("coins", 0)
 
 def is_unlimited(user_id):
+    # No expiry for unlimited – stays as boolean
     data = load_coins()
     return data.get(str(user_id), {"coins": 0, "unlimited": False}).get("unlimited", False)
 
 def _ensure_user(data, str_id):
     if str_id not in data:
-        data[str_id] = {"coins": 0, "unlimited": False, "subscribed": False}
+        data[str_id] = {"coins": 0, "unlimited": False, "subscribed": False, "expiry": None}
     if "subscribed" not in data[str_id]:
         data[str_id]["subscribed"] = False
+    if "expiry" not in data[str_id]:
+        data[str_id]["expiry"] = None
 
 def is_subscribed(user_id):
     data = load_coins()
     entry = data.get(str(user_id), {})
+    # Check expiry
+    expiry_str = entry.get("expiry")
+    if expiry_str:
+        try:
+            expiry = datetime.datetime.strptime(expiry_str, "%Y-%m-%d").date()
+            if expiry < datetime.date.today():
+                return False  # expired
+        except:
+            pass
+    # If unlimited, also considered subscribed
     return entry.get("unlimited", False) or entry.get("subscribed", False)
 
-def set_subscribed(user_id, status: bool):
+def set_subscribed(user_id, status: bool, months=0):
     data = load_coins()
     sid = str(user_id)
     _ensure_user(data, sid)
     data[sid]["subscribed"] = status
+    if months > 0:
+        expiry_date = datetime.date.today() + datetime.timedelta(days=months*30)
+        data[sid]["expiry"] = expiry_date.strftime("%Y-%m-%d")
+    else:
+        # If months = 0, remove expiry and set subscribed False
+        data[sid]["expiry"] = None
+        data[sid]["subscribed"] = False
     save_coins(data)
 
 def deduct_coins(user_id, amount=10):
@@ -264,7 +284,7 @@ def add_coins(user_id, amount):
     data = load_coins()
     str_id = str(user_id)
     if str_id not in data:
-        data[str_id] = {"coins": 0, "unlimited": False}
+        data[str_id] = {"coins": 0, "unlimited": False, "subscribed": False, "expiry": None}
     data[str_id]["coins"] += amount
     save_coins(data)
 
@@ -272,7 +292,7 @@ def set_coins(user_id, amount):
     data = load_coins()
     str_id = str(user_id)
     if str_id not in data:
-        data[str_id] = {"coins": 0, "unlimited": False}
+        data[str_id] = {"coins": 0, "unlimited": False, "subscribed": False, "expiry": None}
     data[str_id]["coins"] = amount
     save_coins(data)
 
@@ -280,7 +300,7 @@ def set_unlimited(user_id, status: bool):
     data = load_coins()
     str_id = str(user_id)
     if str_id not in data:
-        data[str_id] = {"coins": 0, "unlimited": False}
+        data[str_id] = {"coins": 0, "unlimited": False, "subscribed": False, "expiry": None}
     data[str_id]["unlimited"] = status
     save_coins(data)
 
@@ -1122,6 +1142,7 @@ async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fancy_log(user_id, "ADMIN", "Bot Stopped")
     sys.exit(0)
 
+# NEW subscribe command with months
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_ID:
@@ -1129,12 +1150,17 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         target_id = int(context.args[0])
-        status = context.args[1].lower() in ["true", "1", "yes"]
-        set_subscribed(target_id, status)
-        label = "✅ Subscribed — user can use mod features." if status else "❌ Subscription removed."
-        await update.message.reply_text(f"{label}\nUser: {target_id}")
+        months = int(context.args[1])
+        if months <= 0:
+            # Remove subscription
+            set_subscribed(target_id, False, 0)
+            await update.message.reply_text(f"❌ Subscription removed for user {target_id}.")
+        else:
+            set_subscribed(target_id, True, months)
+            expiry_date = datetime.date.today() + datetime.timedelta(days=months*30)
+            await update.message.reply_text(f"✅ Subscribed user {target_id} for {months} month(s).\nExpires on: {expiry_date}.")
     except:
-        await update.message.reply_text("Usage: /subscribe <user_id> <True/False>")
+        await update.message.reply_text("Usage: /subscribe <user_id> <months>\nExample: /subscribe 6531314640 1")
 
 #-----------------------------
 # MOD APPLY FUNCTIONS (unchanged)
@@ -1337,11 +1363,10 @@ def main():
     app.add_handler(CommandHandler("unlimited", unlimited_command))
     app.add_handler(CommandHandler("balance", balance_command))
     app.add_handler(CommandHandler("stopbot", stopbot_command))
-    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))  # updated handler
     app.add_error_handler(error_handler)
 
     # ======================== ADDED FOR RENDER PORT ========================
-    # Start a simple HTTP server on the port Render expects
     class HealthCheckHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
