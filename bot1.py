@@ -35,7 +35,7 @@ from Crypto.Hash import SHA1
 # CONFIG / CONSTANTS
 #-----------------------------
 
-BOT_TOKEN = "8737245427:AAF_heB6i6gE3Ew0dAdErrY57DvuHISwdes"
+BOT_TOKEN = "8737245427:AAHqNUjw3SsXkM4I4W-uKAvUFiz1tTFN95E"
 ADMIN_ID = [6531314640]
 OWNER_USERNAME = "@Maarkryan"
 
