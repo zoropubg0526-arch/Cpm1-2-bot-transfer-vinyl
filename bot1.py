@@ -35,7 +35,9 @@ from Crypto.Hash import SHA1
 # CONFIG / CONSTANTS
 #-----------------------------
 
-BOT_TOKEN = "8737245427:AAHqNUjw3SsXkM4I4W-uKAvUFiz1tTFN95E"
+# ✅ PINALITAN NG BAGONG TOKEN
+BOT_TOKEN = "8737245427:AAFTz7bxEVjws6kgjx4kJUViKw2oPLMP2HE"
+
 ADMIN_ID = [6531314640]
 OWNER_USERNAME = "@Maarkryan"
 
@@ -1372,6 +1374,11 @@ def main():
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'OK')
+
+        # ✅ FIX: PARA TANGGAPIN ANG HEAD REQUESTS (501 SOLUTION)
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
 
     def start_http_server():
         port = int(os.environ.get('PORT', 10000))
